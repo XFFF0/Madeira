@@ -1,0 +1,153 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: "Xcode configuration (Debug is the one that runs games)"
+        default: "Debug"
+
+env:
+  LLVM_SHA: 8dfdcc7b7bf66834a761bd8de445840ef68e4d1a
+  MINGW_VER: llvm-mingw-20260421-ucrt-macos-universal
+
+jobs:
+  # ---------- Stage 1: LLVM for iOS (slow, cached) ----------
+  llvm:
+    runs-on: macos-15
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: false }
+      - name: Cache LLVM
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            toolchains/llvm-project
+            toolchains/llvm-ios-build
+          key: llvm-ios-${{ env.LLVM_SHA }}-v1
+      - name: Fetch LLVM sources (llvm/ + cmake/ only)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p toolchains/llvm-project && cd toolchains/llvm-project
+          git init -q && git remote add origin https://github.com/llvm/llvm-project.git
+          git config core.sparseCheckout true
+          printf 'llvm\ncmake\nthird-party\n' > .git/info/sparse-checkout
+          git fetch --depth 1 origin $LLVM_SHA
+          git checkout -q FETCH_HEAD
+          du -sh .
+      - name: Build host tblgen + iOS LLVM
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          brew install ninja cmake
+          cd toolchains
+          cmake -G Ninja -S llvm-project/llvm -B llvm-host-build -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_TARGETS_TO_BUILD= -DLLVM_ENABLE_PROJECTS= -DLLVM_INCLUDE_TESTS=Off -DLLVM_ENABLE_ZLIB=Off
+          cmake --build llvm-host-build --target llvm-tblgen
+          cmake -G Ninja -S llvm-project/llvm -B llvm-ios-build \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_HOST_TRIPLE=arm64-apple-ios17.0 -DLLVM_DEFAULT_TARGET_TRIPLE=arm64-apple-ios17.0 \
+            -DLLVM_TARGET_ARCH=host -DLLVM_TARGETS_TO_BUILD= -DLLVM_ENABLE_PROJECTS= \
+            -DLLVM_BUILD_TOOLS=Off -DLLVM_INCLUDE_TESTS=Off -DLLVM_INCLUDE_UTILS=Off \
+            -DLLVM_INCLUDE_BENCHMARKS=Off -DLLVM_INCLUDE_EXAMPLES=Off -DLLVM_ENABLE_ZLIB=Off \
+            -DLLVM_ENABLE_ZSTD=Off -DLLVM_ENABLE_TERMINFO=Off \
+            -DLLVM_TABLEGEN=$PWD/llvm-host-build/bin/llvm-tblgen
+          cmake --build llvm-ios-build
+          rm -rf llvm-host-build
+          find llvm-ios-build -name '*.o' -delete || true
+
+  # ---------- Stage 2: everything else + IPA ----------
+  build:
+    needs: llvm
+    runs-on: macos-15
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Restore LLVM
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            toolchains/llvm-project
+            toolchains/llvm-ios-build
+          key: llvm-ios-${{ env.LLVM_SHA }}-v1
+          fail-on-cache-miss: true
+
+      - name: Tools
+        run: |
+          brew install ninja cmake meson bison flex ccache llvm lld
+          echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/bison/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/flex/bin" >> $GITHUB_PATH
+          sudo xcode-select -s /Applications/Xcode_16.4.app 2>/dev/null || true
+          xcodebuild -version
+
+      - name: llvm-mingw toolchain
+        run: |
+          cd toolchains
+          curl -fL -o mingw.tar.xz https://github.com/mstorsjo/llvm-mingw/releases/download/20260421/$MINGW_VER.tar.xz
+          echo "bd85a3975723815cef28dbbd2ca2cb0c926f6b348a12a0453f39f7af273cb3f7  mingw.tar.xz" | shasum -a 256 -c
+          tar xf mingw.tar.xz && rm mingw.tar.xz
+
+      - name: Cache FEX / GnuTLS builds
+        uses: actions/cache@v4
+        with:
+          path: |
+            FEX/build-ios
+            toolchains/gnutls-ios
+          key: fex-ios-${{ hashFiles('.gitmodules') }}-${{ github.sha }}
+          restore-keys: fex-ios-
+
+      - name: FEXCore (iOS)
+        run: bash build/fex-ios/build.sh
+
+      - name: Configure Wine (macOS, headers/config only)
+        run: |
+          mkdir -p wine/build-macos && cd wine/build-macos
+          ../configure --enable-win64 --disable-tests --without-x --without-freetype || ../configure --disable-tests --without-x
+          make -j$(sysctl -n hw.ncpu) include/config.h || true
+
+      - name: Wine unix libs
+        run: |
+          bash build/ntdll-unix/build.sh
+          bash build/wineserver/build.sh
+          bash build/win32u-unix/build.sh
+
+      - name: DXMT unix + combine with LLVM
+        run: |
+          bash build/dxmt-ios/build.sh
+          xcrun -sdk iphoneos libtool -static -o app/Madeira/libdxmt_combined.a \
+            build/dxmt-ios/libdxmt_unix.a $(find toolchains/llvm-ios-build/lib -name 'libLLVM*.a')
+          ls -la app/Madeira/*.a
+
+      - name: VC runtime placeholder (supply real DLLs for games that need them)
+        run: |
+          mkdir -p app/Madeira/x86_64-vcruntime
+          [ -n "$(ls app/Madeira/x86_64-vcruntime)" ] || echo "placeholder" > app/Madeira/x86_64-vcruntime/README.txt
+
+      - name: Stage licenses
+        run: bash build/stage-licenses.sh || true
+
+      - name: Xcode build (unsigned)
+        run: |
+          xcodebuild -project app/Madeira.xcodeproj -scheme Madeira \
+            -configuration "${{ inputs.configuration }}" -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+
+      - name: Package IPA
+        run: |
+          APP=$(find build/DerivedData/Build/Products -maxdepth 2 -name Madeira.app | head -1)
+          rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
+          zip -qry Madeira.ipa Payload
+          ls -la Madeira.ipa
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Madeira-unsigned-ipa
+          path: Madeira.ipa
+          if-no-files-found: warn
