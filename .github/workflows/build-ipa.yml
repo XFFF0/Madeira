@@ -19,6 +19,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: false }
+      - name: Log capture
+        run: |
+          printf '%s\n' 'exec > >(tee -a /tmp/ci.log) 2>&1' > /tmp/benv.sh
+          echo "BASH_ENV=/tmp/benv.sh" >> $GITHUB_ENV
       - name: Cache LLVM
         id: cache
         uses: actions/cache@v4
@@ -58,6 +62,22 @@ jobs:
           rm -rf llvm-host-build
           find llvm-ios-build -name '*.o' -delete || true
 
+      - name: Report failure log
+        if: failure()
+        run: |
+          unset BASH_ENV
+          sleep 2
+          python3 - <<'PY'
+          import re,os
+          t=open('/tmp/ci.log',errors='replace').read()
+          lines=t.splitlines()
+          errs=[l for l in lines if re.search(r'error|Error|ERROR|fatal|FAILED|No such file|not found',l)]
+          sel=(errs[-15:]+['--- tail ---']+lines[-20:])
+          msg='\n'.join(x[:300] for x in sel)[-3800:]
+          msg=msg.replace('%','%25').replace('\r','').replace('\n','%0A')
+          print('::error title=CI log::'+msg)
+          PY
+
   # ---------- Stage 2: everything else + IPA ----------
   build:
     needs: llvm
@@ -66,6 +86,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
+      - name: Log capture
+        run: |
+          printf '%s\n' 'exec > >(tee -a /tmp/ci.log) 2>&1' > /tmp/benv.sh
+          echo "BASH_ENV=/tmp/benv.sh" >> $GITHUB_ENV
 
       - name: Restore LLVM
         uses: actions/cache/restore@v4
@@ -151,3 +175,18 @@ jobs:
           name: Madeira-unsigned-ipa
           path: Madeira.ipa
           if-no-files-found: warn
+      - name: Report failure log
+        if: failure()
+        run: |
+          unset BASH_ENV
+          sleep 2
+          python3 - <<'PY'
+          import re,os
+          t=open('/tmp/ci.log',errors='replace').read()
+          lines=t.splitlines()
+          errs=[l for l in lines if re.search(r'error|Error|ERROR|fatal|FAILED|No such file|not found',l)]
+          sel=(errs[-15:]+['--- tail ---']+lines[-20:])
+          msg='\n'.join(x[:300] for x in sel)[-3800:]
+          msg=msg.replace('%','%25').replace('\r','').replace('\n','%0A')
+          print('::error title=CI log::'+msg)
+          PY
