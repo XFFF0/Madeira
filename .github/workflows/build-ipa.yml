@@ -59,7 +59,9 @@ jobs:
             -DLLVM_ENABLE_ZSTD=Off -DLLVM_ENABLE_TERMINFO=Off \
             -DCMAKE_MACOSX_BUNDLE=OFF -DLLVM_NATIVE_TOOL_DIR=$PWD/llvm-host-build/bin \
             -DLLVM_TABLEGEN=$PWD/llvm-host-build/bin/llvm-tblgen
-          cmake --build llvm-ios-build
+          LIBS=$(ninja -C llvm-ios-build -t targets all | grep -oE '^lib/libLLVM[A-Za-z0-9_]+\.a' | sort -u)
+          echo "$LIBS" | wc -l
+          ninja -C llvm-ios-build $LIBS
           rm -rf llvm-host-build
           find llvm-ios-build -name '*.o' -delete || true
 
