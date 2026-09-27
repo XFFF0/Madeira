@@ -119,17 +119,23 @@ jobs:
           echo "bd85a3975723815cef28dbbd2ca2cb0c926f6b348a12a0453f39f7af273cb3f7  mingw.tar.xz" | shasum -a 256 -c
           tar xf mingw.tar.xz && rm mingw.tar.xz
 
-      - name: Cache FEX / GnuTLS builds
+      - name: Cache FEX / GnuTLS / FreeType builds
         uses: actions/cache@v4
         with:
           path: |
             FEX/build-ios
             toolchains/gnutls-ios
-          key: fex-ios-${{ hashFiles('.gitmodules') }}-${{ github.sha }}
+            research/freetype
+          key: fex-ios-${{ hashFiles('.gitmodules', 'build/fex-ios/**', 'build/gnutls-ios/**', 'build/freetype-ios/**') }}
           restore-keys: fex-ios-
 
       - name: GnuTLS stack (iOS)
         run: bash build/gnutls-ios/build.sh
+
+      - name: FreeType (iOS)
+        run: |
+          [ -d research/freetype/.git ] || git clone --depth 1 --branch VER-2-13-3 https://github.com/freetype/freetype.git research/freetype
+          bash build/freetype-ios/build.sh
 
       - name: FEXCore (iOS)
         run: bash build/fex-ios/build.sh
