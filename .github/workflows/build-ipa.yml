@@ -71,14 +71,22 @@ jobs:
           unset BASH_ENV
           sleep 2
           python3 - <<'PY'
-          import re,os
-          t=open('/tmp/ci.log',errors='replace').read()
-          lines=t.splitlines()
-          errs=[l for l in lines if re.search(r'error|Error|ERROR|fatal|FAILED|No such file|not found',l)]
-          sel=(errs[-15:]+['--- tail ---']+lines[-20:])
-          msg='\n'.join(x[:300] for x in sel)[-3800:]
-          msg=msg.replace('%','%25').replace('\r','').replace('\n','%0A')
-          print('::error title=CI log::'+msg)
+          import re
+          t = open('/tmp/ci.log', errors='replace').read()
+          lines = t.splitlines()
+          # Our own build scripts print "--- <file>.err ---" then the real
+          # compiler error for each failed file -- if any exist, that IS the
+          # answer; showing those beats a generic tail/error-keyword scan.
+          err_block_idxs = [i for i, l in enumerate(lines) if l.startswith('--- ') and l.endswith('.err ---')]
+          if err_block_idxs:
+              start = err_block_idxs[0]
+              sel = lines[start:]
+          else:
+              errs = [l for l in lines if re.search(r'error|Error|ERROR|fatal|FAILED|No such file|not found', l)]
+              sel = errs[-15:] + ['--- tail ---'] + lines[-20:]
+          msg = '\n'.join(x[:300] for x in sel)[-3800:]
+          msg = msg.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          print('::error title=CI log::' + msg)
           PY
 
   # ---------- Stage 2: everything else + IPA ----------
@@ -202,12 +210,20 @@ jobs:
           unset BASH_ENV
           sleep 2
           python3 - <<'PY'
-          import re,os
-          t=open('/tmp/ci.log',errors='replace').read()
-          lines=t.splitlines()
-          errs=[l for l in lines if re.search(r'error|Error|ERROR|fatal|FAILED|No such file|not found',l)]
-          sel=(errs[-15:]+['--- tail ---']+lines[-20:])
-          msg='\n'.join(x[:300] for x in sel)[-3800:]
-          msg=msg.replace('%','%25').replace('\r','').replace('\n','%0A')
-          print('::error title=CI log::'+msg)
+          import re
+          t = open('/tmp/ci.log', errors='replace').read()
+          lines = t.splitlines()
+          # Our own build scripts print "--- <file>.err ---" then the real
+          # compiler error for each failed file -- if any exist, that IS the
+          # answer; showing those beats a generic tail/error-keyword scan.
+          err_block_idxs = [i for i, l in enumerate(lines) if l.startswith('--- ') and l.endswith('.err ---')]
+          if err_block_idxs:
+              start = err_block_idxs[0]
+              sel = lines[start:]
+          else:
+              errs = [l for l in lines if re.search(r'error|Error|ERROR|fatal|FAILED|No such file|not found', l)]
+              sel = errs[-15:] + ['--- tail ---'] + lines[-20:]
+          msg = '\n'.join(x[:300] for x in sel)[-3800:]
+          msg = msg.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          print('::error title=CI log::' + msg)
           PY
