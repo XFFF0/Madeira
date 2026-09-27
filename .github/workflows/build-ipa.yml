@@ -146,6 +146,13 @@ jobs:
           mkdir -p wine/build-macos && cd wine/build-macos
           ../configure --enable-win64 --disable-tests --without-x --without-freetype || ../configure --disable-tests --without-x
           make -j$(sysctl -n hw.ncpu) include/config.h || true
+          # win32u/ntdll/wineserver unix-lib sources #include widl-generated
+          # headers (e.g. objidlbase.h from objidlbase.idl) that Wine's own
+          # Makefiles produce via the widl tool -- our custom clang-based
+          # unix-lib scripts bypass those Makefiles entirely, so build widl
+          # and generate the derived headers here first.
+          make -j$(sysctl -n hw.ncpu) -C tools/widl
+          make -j$(sysctl -n hw.ncpu) -C include
 
       - name: Wine unix libs
         run: |
