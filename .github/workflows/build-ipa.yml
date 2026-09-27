@@ -128,6 +128,9 @@ jobs:
           key: fex-ios-${{ hashFiles('.gitmodules') }}-${{ github.sha }}
           restore-keys: fex-ios-
 
+      - name: GnuTLS stack (iOS)
+        run: bash build/gnutls-ios/build.sh
+
       - name: FEXCore (iOS)
         run: bash build/fex-ios/build.sh
 

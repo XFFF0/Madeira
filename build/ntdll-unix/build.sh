@@ -107,9 +107,18 @@ compile_unixlib "$WINE_SRC/dlls/secur32/schannel_gnutls.c" "secur32_unixlib" "se
 # freetype is static here, so dwrite_freetype_ios.c rewrites dlopen/dlsym.
 # dwrite.h/dwrite_3.h are widl-generated and only exist in the arm64ec
 # build tree, so that include dir is named explicitly here.
-compile_unixlib "$BUILD_DIR/dwrite_freetype_ios.c" "dwrite_unixlib" "dwrite" \
-    -I"$WINE_SRC/dlls/dwrite" -I"$REPO_ROOT/research/freetype/include" \
-    -I"$REPO_ROOT/wine/build-arm64ec/include"
+# dwrite needs widl-generated headers from the arm64ec (PE) Wine build tree,
+# which this CI does not build yet -- skip it rather than fail the whole
+# unix-lib stage; text rendering under Wine is unavailable until that's added.
+if [ -d "$REPO_ROOT/wine/build-arm64ec/include" ] && [ -d "$REPO_ROOT/research/freetype/include" ]; then
+    compile_unixlib "$BUILD_DIR/dwrite_freetype_ios.c" "dwrite_unixlib" "dwrite" \
+        -I"$WINE_SRC/dlls/dwrite" -I"$REPO_ROOT/research/freetype/include" \
+        -I"$REPO_ROOT/wine/build-arm64ec/include"
+    HAVE_DWRITE=1
+else
+    echo "  dwrite_unixlib... SKIPPED (arm64ec PE tree / freetype not built in this CI yet)"
+    HAVE_DWRITE=0
+fi
 compile_unixlib "$CRYPTO_DIR/crypt32_unixlib_ios.c" "crypt32_unixlib" "crypt32" \
     -I"$WINE_SRC/dlls/crypt32" -I"$GNUTLS_PREFIX/include" \
     -include "$CRYPTO_DIR/ios_gnutls_shim.h"
@@ -169,7 +178,7 @@ ar rcs "$OBJ_DIR/libntdll_unix.a" \
     "$OBJ_DIR/audio_null_ios.o" "$OBJ_DIR/madsync.o" "$OBJ_DIR/nsi_unixlib_ios.o" \
     "$OBJ_DIR/gnutls_symtab_ios.o" "$OBJ_DIR/ws2_32_unixlib.o" \
     "$OBJ_DIR/bcrypt_unixlib.o" "$OBJ_DIR/secur32_unixlib.o" "$OBJ_DIR/crypt32_unixlib.o" \
-    "$OBJ_DIR/dwrite_unixlib.o" \
+    ${HAVE_DWRITE:+"$OBJ_DIR/dwrite_unixlib.o"} \
     "$OBJ_DIR/cdrom.o" "$OBJ_DIR/debug.o" "$OBJ_DIR/env.o" "$OBJ_DIR/file.o" \
     "$OBJ_DIR/loader.o" "$OBJ_DIR/loadorder.o" "$OBJ_DIR/process.o" "$OBJ_DIR/registry.o" \
     "$OBJ_DIR/security.o" "$OBJ_DIR/serial.o" "$OBJ_DIR/server.o" \
