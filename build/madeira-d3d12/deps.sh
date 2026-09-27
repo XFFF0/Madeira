@@ -15,6 +15,16 @@
 #   MSC_LIB_IOS   iOS arm64 dylib         (what actually ships in the app)
 set -eu
 
+# Callers (build/dxmt-ios/build.sh) source this and treat a nonzero exit as
+# "converter absent, skip the optional canary" -- but plain `exit` inside a
+# sourced script kills the *caller's* shell too under `set -e`, not just this
+# script, which silently aborted the whole DXMT build with no logged reason.
+# `return` only unwinds the sourcing, not `exit` -- but `return` inside a
+# function always means "return from that function", so the early-outs below
+# use this inline at top level (not a helper function) wherever they'd have
+# said `exit 1`, after detecting sourced-vs-executed once here.
+(return 0 2>/dev/null) && SOURCED=1 || SOURCED=0
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MSC_PKG="$REPO_ROOT/research/GPTK/Metal Shader Converter 4.0 beta 2.pkg"
 
@@ -26,7 +36,7 @@ if [[ ! -f "$MSC_PKG" ]]; then
     echo "deps: missing converter package:" >&2
     echo "      $MSC_PKG" >&2
     echo "      Supply it locally; it is deliberately not vendored." >&2
-    exit 1
+    { [ "$SOURCED" = 1 ] && return 1 || exit 1; }
 fi
 
 have="$(shasum -a 256 "$MSC_PKG" | cut -d' ' -f1)"
@@ -35,7 +45,7 @@ if [[ "$have" != "$MSC_PKG_SHA256" ]]; then
     echo "      expected $MSC_PKG_SHA256" >&2
     echo "      found    $have" >&2
     echo "      Shader cache keys include the compiler package; refusing to continue." >&2
-    exit 1
+    { [ "$SOURCED" = 1 ] && return 1 || exit 1; }
 fi
 
 MSC_ROOT="${MADEIRA_MSC_ROOT:-}"
@@ -63,7 +73,7 @@ MSC_LIB_IOS="$MSC_PAYLOAD/usr/local/lib_iOS/libmetalirconverter.dylib"
 for f in "$MSC_INCLUDE/metal_irconverter/metal_irconverter.h" \
          "$MSC_INCLUDE/metal_irconverter_runtime/metal_irconverter_runtime.h" \
          "$MSC_LIB_MACOS" "$MSC_LIB_IOS"; do
-    [[ -e "$f" ]] || { echo "deps: extraction incomplete, missing $f" >&2; exit 1; }
+    [[ -e "$f" ]] || { echo "deps: extraction incomplete, missing $f" >&2; { [ "$SOURCED" = 1 ] && return 1 || exit 1; }; }
 done
 
 export MSC_ROOT MSC_PAYLOAD MSC_INCLUDE MSC_LIB_MACOS MSC_LIB_IOS
