@@ -144,6 +144,7 @@ jobs:
       - name: Wine unix libs
         run: |
           bash build/ntdll-unix/build.sh
+          bash build/wineserver/build-base.sh
           bash build/wineserver/build.sh
           bash build/win32u-unix/build.sh
 
