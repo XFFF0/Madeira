@@ -23,3 +23,24 @@ static BOOL arm64ec_iat_slot_is_x64_export( HMODULE module, ULONG image_size, UL
     print("created stub:", path)
 else:
     print("already present:", path)
+
+
+def fix_include_order(wine):
+    """makedep requires config.h to be the literal first #include; these two
+    files put a local header first (to dodge Wine's strncpy poison macro,
+    which only appears later via windef.h/winbase.h -- so swapping the two
+    lines keeps that protection while satisfying makedep)."""
+    import re
+    for rel in ("dlls/ntdll/unix/sync.c", "dlls/ntdll/unix/system.c"):
+        p = os.path.join(wine, rel)
+        if not os.path.exists(p):
+            continue
+        s = open(p).read()
+        old = '#include "../../../../build/madeira_cfg.h"   /* ml1122: before the Wine headers, which ban strncpy by macro */\n#include "config.h"\n'
+        new = '#include "config.h"\n#include "../../../../build/madeira_cfg.h"   /* ml1122: before the Wine headers, which ban strncpy by macro; after config.h, which makedep requires first */\n'
+        if old in s:
+            open(p, "w").write(s.replace(old, new))
+            print("fixed include order:", p)
+
+if __name__ == "__main__":
+    fix_include_order(sys.argv[1])
