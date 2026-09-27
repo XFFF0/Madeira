@@ -133,6 +133,7 @@ jobs:
 
       - name: Configure Wine (macOS, headers/config only)
         run: |
+          python3 build/wine-pe/patch_unix_configure.py wine
           mkdir -p wine/build-macos && cd wine/build-macos
           ../configure --enable-win64 --disable-tests --without-x --without-freetype || ../configure --disable-tests --without-x
           make -j$(sysctl -n hw.ncpu) include/config.h || true
