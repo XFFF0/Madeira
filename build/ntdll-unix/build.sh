@@ -117,7 +117,7 @@ if [ -d "$REPO_ROOT/wine/build-arm64ec/include" ] && [ -d "$REPO_ROOT/research/f
     HAVE_DWRITE=1
 else
     echo "  dwrite_unixlib... SKIPPED (arm64ec PE tree / freetype not built in this CI yet)"
-    HAVE_DWRITE=0
+    unset HAVE_DWRITE
 fi
 compile_unixlib "$CRYPTO_DIR/crypt32_unixlib_ios.c" "crypt32_unixlib" "crypt32" \
     -I"$WINE_SRC/dlls/crypt32" -I"$GNUTLS_PREFIX/include" \
