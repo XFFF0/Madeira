@@ -156,6 +156,11 @@ echo ""
 echo "Results: $SUCCEEDED succeeded, $FAILED failed"
 if [ -n "$FAILED_FILES" ]; then
     echo "Failed:$FAILED_FILES"
+    for f in $FAILED_FILES; do
+        echo "--- $f.err ---"
+        cat "$OBJ_DIR/$f.err" 2>/dev/null | head -40
+    done
+    exit 1
 fi
 
 echo ""
