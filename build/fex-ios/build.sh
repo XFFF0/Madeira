@@ -15,3 +15,22 @@ if [ ! -f "$B/CMakeCache.txt" ]; then
 fi
 cmake --build "$B" --target FEXCore FEXCore_Base
 ls "$B/FEXCore/Source/"*.a
+
+# The Xcode project also links these FEX-vendored static libs directly.
+# Building the two targets above normally pulls them in as link
+# dependencies, but don't gamble on that: build each by name if its
+# archive isn't already on disk.
+declare -A EXTRA_LIBS=(
+    [External/SoftFloat-3e/libsoftfloat_3e.a]=softfloat_3e
+    [External/cephes/libcephes_128bit.a]=cephes_128bit
+    [External/fmt/libfmt.a]=fmt
+    [External/xxhash/cmake_unofficial/libxxhash.a]=xxhash
+    [FEXCore/Source/libJemallocLibs.a]=JemallocLibs
+)
+for rel in "${!EXTRA_LIBS[@]}"; do
+    if [ ! -f "$B/$rel" ]; then
+        echo "Missing $rel, building target ${EXTRA_LIBS[$rel]}..."
+        cmake --build "$B" --target "${EXTRA_LIBS[$rel]}" || echo "WARN: target ${EXTRA_LIBS[$rel]} build failed; Xcode link will report this if it's actually needed"
+    fi
+    [ -f "$B/$rel" ] && echo "OK: $rel" || echo "STILL MISSING: $rel (check the CMake target name in FEX/CMakeLists.txt / External/*)"
+done
