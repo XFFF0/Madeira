@@ -171,6 +171,18 @@ jobs:
 
       - name: DXMT unix + combine with LLVM
         run: |
+          # airconv_context.cpp embeds 3 tiny Metal shaders as bitcode arrays
+          # (air_msad.h etc.) via #include; upstream generates those with
+          # meson (xcrun metal -> .air, then xxd -i -> .h), which our
+          # hand-rolled clang build bypasses entirely, so do it here first.
+          mkdir -p build/dxmt-ios/shader-headers
+          for shader in air_msad air_samplepos air_tessellation; do
+            src="research/dxmt/src/airconv/shaders/$shader.metal"
+            air="build/dxmt-ios/shader-headers/$shader.air"
+            hdr="build/dxmt-ios/shader-headers/$shader.h"
+            xcrun -sdk macosx metal -o "$air" -c "$src"
+            xxd -n "$shader" -i "$air" > "$hdr"
+          done
           bash build/dxmt-ios/build.sh
           xcrun -sdk iphoneos libtool -static -o app/Madeira/libdxmt_combined.a \
             build/dxmt-ios/libdxmt_unix.a $(find toolchains/llvm-ios-build/lib -name 'libLLVM*.a')
